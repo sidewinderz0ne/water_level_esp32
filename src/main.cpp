@@ -8,6 +8,7 @@ int csPin = 5;
 #include <SD.h>
 #include <RTClib.h>
 #include <Timer.h>
+#include <ArduinoJson.h>
 
 RTC_DS3231 rtc;
 
@@ -46,6 +47,8 @@ String getTime();
 void writeData();
 void measureData();
 void appendFile(fs::FS &fs, const char *path, String message);
+String getDatetimeFromJSON(const char *jsonString);
+DateTime stringToDateTime(String waktuString);
 
 void resetWatchdog() {
   watchdogMin++;
@@ -165,12 +168,17 @@ void sendData() {
         http.begin(client, "http://srs-ssms.com/post-wl-data.php");
         http.addHeader("Content-Type", "application/x-www-form-urlencoded");
         int httpCode = http.POST(rawText);
-
         // Check the response
         if (httpCode == 200) {
           deleteTopLine();
           String response = http.getString();
           Serial.println("HTTP response: " + response);
+          String datetime = getDatetimeFromJSON(response.c_str());
+          DateTime koreksiPHP = stringToDateTime(datetime);
+          DateTime dateNow = rtc.now();
+          if (dateNow < koreksiPHP){
+            rtc.adjust(koreksiPHP);
+          }
           payload = rawText;
         } else if (httpCode > 0) {
           String response = http.getString();
@@ -331,4 +339,37 @@ void appendFile(fs::FS &fs, const char *path, String message)
     Serial.println("- append failed");
   }
   file.close();
+}
+
+String getDatetimeFromJSON(const char *jsonString) {
+  // Parse the JSON string
+  DynamicJsonDocument doc(256); // Adjust the size based on your JSON string
+  DeserializationError error = deserializeJson(doc, jsonString);
+
+  // Check for parsing errors
+  if (error) {
+    Serial.print(F("Error parsing JSON: "));
+    Serial.println(error.c_str());
+    return String(); // Return an empty string to indicate an error
+  }
+
+  // Check if the "datetime" key exists and is a string
+  if (doc.containsKey("datetime") && doc["datetime"].is<String>()) {
+    // Get the datetime value
+    return doc["datetime"].as<String>();
+  } else {
+    Serial.println(F("Error: 'datetime' key not found or is not a string."));
+    return String(); // Return an empty string to indicate an error
+  }
+}
+
+DateTime stringToDateTime(String waktuString) {
+  int tahun = waktuString.substring(0, 4).toInt();
+  int bulan = waktuString.substring(5, 7).toInt();
+  int hari = waktuString.substring(8, 10).toInt();
+  int jam = waktuString.substring(11, 13).toInt();
+  int menit = waktuString.substring(14, 16).toInt();
+  int detik = waktuString.substring(17, 19).toInt();
+
+  return DateTime(tahun, bulan, hari, jam, menit, detik);
 }
