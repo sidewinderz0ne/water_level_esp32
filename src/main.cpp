@@ -125,7 +125,6 @@ void setup() {
     int avgDistance = getAvgDistance();
     Serial.println(avgDistance);
     delay(200);
-    //appendFile(SD, "/new_file.txt", String(avgDistance));
   }
 
   getTimer.every(delayWriteData, writeData);
