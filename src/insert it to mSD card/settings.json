@@ -1,0 +1,18 @@
+{   
+"calibration": "5", 
+"debug_mode": "1", 
+"measurement_delay": "1", 
+"sending_data_delay": "3", 
+"appending_data_delay": "30", 
+"idwl": "2", 
+"maximum": "-40", 
+"minimum": "-60", 
+"password": "asdf2345", 
+"sensorD": "1", 
+"sensorN": "1", 
+"sensor_type":"0", 
+"ssid": "testesp", 
+"watchdog_timer": "11",
+"hcsr04pin_trig" : "2", 
+"hcsr04pin_echo" : "4"
+}

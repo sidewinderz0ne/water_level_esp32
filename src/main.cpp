@@ -2,7 +2,7 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <HTTPClient.h>
-#include <Ticker.h>  // Include the Ticker library for ESP32
+#include <Ticker.h> // Include the Ticker library for ESP32
 int csPin = 5;
 
 #include <SD.h>
@@ -16,8 +16,8 @@ RTC_DS3231 rtc;
 volatile int watchdogMin = 0;
 
 int watchdogTimer = 11;
-String ssid = "SRS";
-String password = "SRS@2023";
+String ssid = "testesp";
+String password = "asdf12345";
 int delaySend = 3000;
 int delayWriteData = 30000;
 int delayMeasure = 1000;
@@ -27,13 +27,15 @@ Timer sendTimer, getTimer, measureTimer;
 Ticker watchdogTicker;
 String payload;
 
+unsigned char a01nyubData[4] = {};
+
 #define SOUND_SPEED 0.034
 
-int sensorD, sensorN, minimum, maximum, cal, idwl, debug;
+int sensorD, sensorN, minimum, maximum, cal, idwl, debug, sensor;
 const int distanceAvgCount = 30;
 int distanceCmArr[distanceAvgCount] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-const int ultrasonic[2] = {2, 4};
+int hcsr04pin[2] = {2, 4};
 
 void resetWatchdog();
 String getDataSD(String fileName);
@@ -47,40 +49,57 @@ String getTime();
 void writeData();
 void measureData();
 void appendFile(fs::FS &fs, const char *path, String message);
-String getDatetimeFromJSON(const char *jsonString);
+String getStringFromJSON(String jsonString, String key);
 DateTime stringToDateTime(String waktuString);
+String getValueFromJSON(String text, String tag);
 
-void resetWatchdog() {
+void resetWatchdog()
+{
   watchdogMin++;
-  if (watchdogMin >= watchdogTimer) {
+  if (watchdogMin >= watchdogTimer)
+  {
     esp_cpu_reset(0);
     ESP.restart();
   }
 }
 
-String getDataSD(String fileName){
-  File myFile;                    // create a file object
+String getDataSD(String fileName)
+{
+  File myFile; // create a file object
   String text = "";
-  myFile = SD.open("/"+fileName);  // open the file
-  if (myFile) {
-    text = myFile.readStringUntil('\n');  // read the first line of the file
-    Serial.print(fileName);
-    Serial.print(" : [");
-    Serial.print(text);
-    Serial.println("]");
-    myFile.close();                           // close the file
-  } else {
+  myFile = SD.open("/"+fileName); // open the file
+  if (myFile)
+  {
+    text = myFile.readString();
+    myFile.close(); // close the file
+  }
+  else
+  {
     Serial.println("Error opening file!");
   }
   return text;
 }
 
-void setup() {
+String getValueFromJSON(String text, String tag){
+  String value = getStringFromJSON(text, tag);
+  Serial.print(tag);
+  Serial.print(" : [");
+  Serial.print(value);
+  Serial.println("]");
+  return value;
+}
+
+void setup()
+{
   Serial.begin(115200);
+  Serial2.begin(9600);
   watchdogTicker.attach(WATCHDOG_TIMEOUT, resetWatchdog);
-  if (!SD.begin(csPin)) {
+  if (!SD.begin(csPin))
+  {
     Serial.println("Card failed, or not present");
-  }else{
+  }
+  else
+  {
     Serial.println("Card initialized successfully");
   }
 
@@ -96,38 +115,42 @@ void setup() {
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   }
 
-  pinMode(ultrasonic[0],OUTPUT);
-  pinMode(ultrasonic[1],INPUT);
+  pinMode(hcsr04pin[0], OUTPUT);
+  pinMode(hcsr04pin[1], INPUT);
 
-  ssid = getDataSD("ssid.txt");
-  password = getDataSD("password.txt");
-  minimum = getDataSD("minimum.txt").toInt();
-  maximum = getDataSD("maximum.txt").toInt();
-  sensorD = getDataSD("sensorD.txt").toInt();
-  sensorN = getDataSD("sensorN.txt").toInt();
-  cal = getDataSD("cal.txt").toInt();
-  idwl = getDataSD("idwl.txt").toInt();
-  debug = getDataSD("debug.txt").toInt();
-  delaySend = getDataSD("delaySend.txt").toInt()*1000;
-  delayWriteData = getDataSD("delayWriteData.txt").toInt()*1000;
-  delayMeasure = getDataSD("delayMeasure.txt").toInt()*1000;
-
+  String settings = getDataSD("settings.json");
+  ssid = getValueFromJSON(settings, "ssid");
+  password = getValueFromJSON(settings, "password");
+  minimum = getValueFromJSON(settings, "minimum").toInt();
+  maximum = getValueFromJSON(settings, "maximum").toInt();
+  sensorD = getValueFromJSON(settings, "sensorD").toInt();
+  sensorN = getValueFromJSON(settings, "sensorN").toInt();
+  cal = getValueFromJSON(settings, "calibration").toInt();
+  idwl = getValueFromJSON(settings, "idwl").toInt();
+  debug = getValueFromJSON(settings, "debug_mode").toInt();
+  delaySend = getValueFromJSON(settings, "sending_data_delay").toInt() * 1000;
+  delayWriteData = getValueFromJSON(settings, "appending_data_delay").toInt() * 1000;
+  delayMeasure = getValueFromJSON(settings, "measurement_delay").toInt() * 1000;
+  sensor = getValueFromJSON(settings, "sensor_type").toInt();
+  watchdogTimer = getValueFromJSON(settings, "watchdog_timer").toInt();
 
   // Connect to Wi-Fi network with SSID and password
   Serial.println();
 
-  //pengukuran awal
-  for(int i = 0; i < distanceAvgCount+5; i++){
-
-
+  // pengukuran awal
+  for (int i = 0; i < distanceAvgCount + 5; i++)
+  {
+    int avgDistance = getAvgDistance();
     Serial.print("Pengukuran ke: ");
     Serial.print(i);
     Serial.print(" | average ");
     Serial.print(distanceAvgCount);
     Serial.print(" distance: ");
-    int avgDistance = getAvgDistance();
     Serial.println(avgDistance);
-    delay(200);
+    if (sensor = 0)
+    {
+      delay(150);
+    }
   }
 
   getTimer.every(delayWriteData, writeData);
@@ -135,92 +158,114 @@ void setup() {
   measureTimer.every(delayMeasure, measureData);
 }
 
-void measureData(){
+void measureData()
+{
   getAvgDistance();
 }
 
-void writeData(){
+void writeData()
+{
   int avgDistance = getAvgDistance();
   String timenow = getTime();
   String payload = "lvl_in=" + String(avgDistance) + "&d=" + timenow + "&idwl=" + idwl;
   appendFile(SD, "/data.txt", String(payload));
 }
 
-void sendData() {
-  if (WiFi.status() != WL_CONNECTED) {
+void sendData()
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
     Serial.println("WiFi disconnected");
     connectWiFi();
   }
 
   String rawText;
-  myFile = SD.open("/data.txt");  // open the file
-  if (myFile) {
-    rawText = myFile.readStringUntil('\n');  // read the first line of the file
-    myFile.close();                          // close the file
-    if (rawText != "") {
+  myFile = SD.open("/data.txt"); // open the file
+  if (myFile)
+  {
+    rawText = myFile.readStringUntil('\n'); // read the first line of the file
+    myFile.close();                         // close the file
+    if (rawText != "")
+    {
 
       WiFiClient client;
       HTTPClient http;
 
-      if (payload != rawText) {
+      if (payload != rawText)
+      {
         Serial.println("data: " + rawText);
         // Send the POST request
         http.begin(client, "http://srs-ssms.com/post-wl-data.php");
         http.addHeader("Content-Type", "application/x-www-form-urlencoded");
         int httpCode = http.POST(rawText);
         // Check the response
-        if (httpCode == 200) {
+        if (httpCode == 200)
+        {
           deleteTopLine();
           String response = http.getString();
           Serial.println("HTTP response: " + response);
-          String datetime = getDatetimeFromJSON(response.c_str());
+          String datetime = getStringFromJSON(response,"datetime");
           DateTime koreksiPHP = stringToDateTime(datetime);
           DateTime dateNow = rtc.now();
-          if (dateNow < koreksiPHP){
+          if (dateNow < koreksiPHP)
+          {
             rtc.adjust(koreksiPHP);
           }
           payload = rawText;
-        } else if (httpCode > 0) {
+        }
+        else if (httpCode > 0)
+        {
           String response = http.getString();
           Serial.println("HTTP error response: " + response);
-        } else {
+        }
+        else
+        {
           Serial.print("HTTP error: ");
           Serial.println(httpCode);
         }
         http.end();
-      } else {
+      }
+      else
+      {
         Serial.println("Data masih sama!");
       }
     }
-  } else {
+  }
+  else
+  {
     Serial.println("Error opening file!");
   }
 }
 
-void connectWiFi() {
+void connectWiFi()
+{
   WiFi.begin(ssid.c_str(), password.c_str());
   Serial.print("Connecting to ");
-  Serial.println(ssid);
+  Serial.println("ssid:"+ssid+"|password:"+password);
   unsigned long startTime = millis(); // Record the start time
 
-  while (WiFi.status() != WL_CONNECTED && millis() - startTime < 5000) { // Check both connection and timeout
-    delay(1000);
+  while (WiFi.status() != WL_CONNECTED && millis() - startTime < 8000)
+  { // Check both connection and timeout
+    delay(500);
     Serial.print(".");
   }
 
-  if (WiFi.status() == WL_CONNECTED) {
+  if (WiFi.status() == WL_CONNECTED)
+  {
     Serial.println("\nConnected to WiFi");
     Serial.print("Gateway: ");
     Serial.println(WiFi.gatewayIP());
     Serial.print("Subnet mask: ");
     Serial.println(WiFi.subnetMask());
-  } else {
+  }
+  else
+  {
     Serial.println("\nFailed to connect to WiFi within the timeout period.");
   }
 }
 
-
-void deleteTopLine() {
+void deleteTopLine()
+{
   File originalFile, newFile;
 
   originalFile = SD.open("/data.txt", FILE_READ);
@@ -232,10 +277,12 @@ void deleteTopLine() {
   originalFile.readStringUntil('\n');
 
   // read each subsequent line and write to new file
-  while (originalFile.available()) {
+  while (originalFile.available())
+  {
     String line = originalFile.readStringUntil('\n');
     // check if the line is not empty before writing to the new file
-    if (line.length() > 0) {
+    if (line.length() > 0)
+    {
       newFile.println(line);
     }
   }
@@ -260,34 +307,80 @@ float getDistance(const int *ultrasonicS, float cal)
 
 float getDistanceAct(const int *ultrasonicS, float cal)
 {
-  long duration;
   float dt = 0;
-  // Clears the trigPin
-  digitalWrite(ultrasonicS[0], LOW);
-  delayMicroseconds(2);
-  // Sets the trigPin on HIGH state for 10 micro seconds
-  digitalWrite(ultrasonicS[0], HIGH);
-  delayMicroseconds(10);
-  digitalWrite(ultrasonicS[0], LOW);
-  // Reads the echoPin, returns the sound wave travel time in microseconds
-  duration = pulseIn(ultrasonicS[1], HIGH);
-  duration *SOUND_SPEED / 2;
+  if (sensor == 0)
+  {
+    long duration;
 
-  dt = duration * SOUND_SPEED / 2;
+    // Clears the trigPin
+    digitalWrite(ultrasonicS[0], LOW);
+    delayMicroseconds(2);
+    // Sets the trigPin on HIGH state for 10 micro seconds
+    digitalWrite(ultrasonicS[0], HIGH);
+    delayMicroseconds(10);
+    digitalWrite(ultrasonicS[0], LOW);
+    // Reads the echoPin, returns the sound wave travel time in microseconds
+    duration = pulseIn(ultrasonicS[1], HIGH);
+    duration *SOUND_SPEED / 2;
+
+    dt = duration * SOUND_SPEED / 2;
+  }
+  else if (sensor == 1)
+  {
+    for (int i = 0; i < 9; i++)
+    {
+      do
+      {
+        for (int i = 0; i < 4; i++)
+        {
+          a01nyubData[i] = Serial2.read();
+        }
+      } while (Serial2.read() == 0xff);
+
+      Serial2.flush();
+
+      if (a01nyubData[0] == 0xff)
+      {
+        int total;
+        total = (a01nyubData[0] + a01nyubData[1] + a01nyubData[2]) & 0x00FF;
+        if (total == a01nyubData[3])
+        {
+          float dist = (a01nyubData[1] << 8) + a01nyubData[2];
+          if (dist > 280)
+          {
+            Serial.print("distance=");
+            Serial.print(dist / 10);
+            Serial.println("cm");
+            dt = dist;
+          }
+          else
+          {
+            Serial.println("Below the lower limit");
+          }
+        }
+        else
+          Serial.println("ERROR");
+      }
+      delay(150);
+    }
+  }
   dt += cal;
   return dt;
 }
 
-int getAvgDistance(){
-  for (int j = distanceAvgCount - 1; j > 0; j--) {
+int getAvgDistance()
+{
+  for (int j = distanceAvgCount - 1; j > 0; j--)
+  {
     distanceCmArr[j] = distanceCmArr[j - 1];
   }
-  distanceCmArr[0] = getDistance(ultrasonic, cal);
+  distanceCmArr[0] = getDistance(hcsr04pin, cal);
 
   int sum = 0;
 
   // Calculate the sum of all elements in the array
-  for (int i = 0; i < distanceAvgCount; i++) {
+  for (int i = 0; i < distanceAvgCount; i++)
+  {
     sum += distanceCmArr[i];
   }
 
@@ -304,7 +397,8 @@ int getAvgDistance(){
   return avgDist;
 }
 
-void loop() {
+void loop()
+{
   getTimer.update();
   sendTimer.update();
   measureTimer.update();
@@ -332,7 +426,7 @@ void appendFile(fs::FS &fs, const char *path, String message)
   {
     Serial.println("- message appended");
 
-    //getDataSD(path);
+    // getDataSD(path);
   }
   else
   {
@@ -341,29 +435,35 @@ void appendFile(fs::FS &fs, const char *path, String message)
   file.close();
 }
 
-String getDatetimeFromJSON(const char *jsonString) {
+String getStringFromJSON(String jsonString, String key)
+{
   // Parse the JSON string
-  DynamicJsonDocument doc(256); // Adjust the size based on your JSON string
+  DynamicJsonDocument doc(512); // Adjust the size based on your JSON string
   DeserializationError error = deserializeJson(doc, jsonString);
 
   // Check for parsing errors
-  if (error) {
+  if (error)
+  {
     Serial.print(F("Error parsing JSON: "));
     Serial.println(error.c_str());
     return String(); // Return an empty string to indicate an error
   }
 
   // Check if the "datetime" key exists and is a string
-  if (doc.containsKey("datetime") && doc["datetime"].is<String>()) {
+  if (doc.containsKey(key) && doc[key].is<String>())
+  {
     // Get the datetime value
-    return doc["datetime"].as<String>();
-  } else {
-    Serial.println(F("Error: 'datetime' key not found or is not a string."));
+    return doc[key].as<String>();
+  }
+  else
+  {
+    Serial.println("Error: '" + key + "' key not found or is not a string.");
     return String(); // Return an empty string to indicate an error
   }
 }
 
-DateTime stringToDateTime(String waktuString) {
+DateTime stringToDateTime(String waktuString)
+{
   int tahun = waktuString.substring(0, 4).toInt();
   int bulan = waktuString.substring(5, 7).toInt();
   int hari = waktuString.substring(8, 10).toInt();
