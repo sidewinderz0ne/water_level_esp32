@@ -160,7 +160,8 @@ void setup()
 
 void measureData()
 {
-  getAvgDistance();
+  int distanceNow = getAvgDistance();
+  Serial.println(distanceNow);
 }
 
 void writeData()
