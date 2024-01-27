@@ -147,7 +147,7 @@ void setup()
     Serial.print(distanceAvgCount);
     Serial.print(" distance: ");
     Serial.println(avgDistance);
-    if (sensor = 0)
+    if (sensor == 0)
     {
       delay(150);
     }
@@ -160,8 +160,18 @@ void setup()
 
 void measureData()
 {
-  int distanceNow = getAvgDistance();
-  Serial.println(distanceNow);
+  getAvgDistance();
+  for (int i = 0; i < distanceAvgCount; ++i) {
+    if (i==0){
+      Serial.print("Value=[");
+    }
+    Serial.print(distanceCmArr[i]);
+    if (i==(distanceAvgCount-1)){
+      Serial.println("]");
+    }else{
+      Serial.print(",");
+    }
+  }
 }
 
 void writeData()
@@ -347,6 +357,7 @@ float getDistanceAct(const int *ultrasonicS, float cal)
         if (total == a01nyubData[3])
         {
           float dist = (a01nyubData[1] << 8) + a01nyubData[2];
+  
           if (dist > 280)
           {
             Serial.print("distance=");
@@ -385,15 +396,7 @@ int getAvgDistance()
     sum += distanceCmArr[i];
   }
 
-  // Calculate the average
-  // Serial.print("sum: ");
-  // Serial.println(sum);
-  // // Calculate the average
-  // Serial.print("distanceAvgCount: ");
-  // Serial.println(distanceAvgCount);
-
   int avgDist = sum / distanceAvgCount;
-  // Serial.println(avgDist);
 
   return avgDist;
 }
